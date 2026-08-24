@@ -1,21 +1,38 @@
 # 🛒 GlobalMart Retail Intelligence Pipeline
  
-> An end-to-end data engineering project simulating a modern enterprise retail analytics stack — built with Databricks, PySpark, Delta Lake (Medallion Architecture), and Power BI.
- 
----
+An end-to-end data engineering project simulating a modern enterprise retail analytics stack — built with Databricks, PySpark, Delta Lake (Medallion Architecture), and Power BI.
  
 ## 📋 Project Overview
  
-**Client:** GlobalMart Inc. (Fictitious Retail Giant)  
-**Role:** Junior Data Engineer  
-**Engagement Lead:** Chris Gambill  
+**Client:** GlobalMart Inc. (Fictitious Retail Giant)
+**Role:** Junior Data Engineer
+**Engagement Lead:** Chris Gambill
  
-GlobalMart currently compiles sales spreadsheets manually at the end of every month. This 30-day latency prevents the supply chain team from reacting to shipping delays and the marketing team from identifying high-value customers in real time.
+GlobalMart previously compiled sales spreadsheets manually at the end of every month. This 30-day latency prevented the supply chain team from reacting to shipping delays and the marketing team from identifying high-value customers in real time.
  
-This project builds an **end-to-end data pipeline** that ingests raw sales data, cleans and standardises it, and produces a Gold-layer dimensional model powering a Power BI dashboard — with **zero manual effort**.
+This project builds an end-to-end data pipeline that ingests raw sales data, cleans and standardises it, and produces a Gold-layer dimensional model powering a Power BI dashboard — with zero manual effort.
  
----
+## 📊 Final Dashboard
  
+![GlobalMart Profitability & Logistics Command Center](docs/dashboard_screenshot.png)
+ 
+*Add your dashboard screenshot to `docs/dashboard_screenshot.png` and this will render automatically on GitHub.*
+ 
+The dashboard answers the three business questions below the project was built to solve, plus additional insight visuals added during the build (see [Key Design Decisions](#-key-design-decisions)).
+ 
+| # | Business Question | Visual |
+|---|---|---|
+| 1 | **Profitability** — Which Product Sub-Categories have the lowest profit margins? | Sorted bar chart, Profit Margin by Sub-Category |
+| 2 | **Logistics Efficiency** — What is the Average Days to Ship per Region? | Bar chart, Avg Days to Ship by Region |
+| 3 | **Customer Value** — Who are the Top 10 Customers by total spend? | Ranked table |
+ 
+**Required KPI:** Total Profit, formatted as currency, displayed at the top of the dashboard.
+ 
+**Additional visuals built beyond the brief:**
+- KPI row — Total Sales, Total Orders, Avg Order Value (context for the Total Profit figure)
+- Discount % vs Profit Margin scatter — surfaces which sub-categories are being discounted into unprofitability
+- Avg Days to Ship by Shipping Mode — logistics bottleneck view by carrier tier, not just region
+- Total Sales by Year and Month — trend line, since none of the required visuals show change over time
 ## 🏗️ Technical Architecture
  
 ```
@@ -46,108 +63,37 @@ CSV Source (Kaggle Superstore)
 |---|---|
 | Ingestion | Databricks Free Edition + PySpark |
 | Processing | Apache Spark (PySpark) |
-| Orchestration | Databricks Jobs (Scheduled Notebook Execution) |
 | Storage | Delta Lake (Medallion Architecture) |
 | Visualisation | Power BI Desktop (Import Mode via Partner Connect) |
  
----
- 
 ## 📦 Dataset
  
-- **Source:** [Superstore Sales Dataset — Kaggle](https://www.kaggle.com/)
-- **File:** `Sample - Superstore.csv`
----
+**Source:** [Superstore Dataset Final — Kaggle](https://www.kaggle.com/datasets/vivek468/superstore-dataset-final)
  
+## 🧠 Key Design Decisions
+ 
+These are the judgment calls made during the build, and the reasoning behind them:
+ 
+- **Geography as a degenerate dimension, not a full SCD2 table.** Geography was initially modeled as a Slowly Changing Dimension (Type 2) with `valid_from`/`valid_to`/`is_current_flag` tracking. Since this dataset has no actual geography changes over time (it's a static historical extract), that added complexity without adding value — and was producing row duplication in the fact table from overlapping dimension versions. `region`, `state`, and `city` are instead carried as flat degenerate attributes directly on `Fact_Sales`, which is simpler and more appropriate for data that doesn't actually change.
+- **`discount_amount` stored as an additive fact, not the raw discount rate.** Discount rates (percentages) can't be summed meaningfully across rows — storing the calculated dollar amount (`sales × discount`) instead means it aggregates correctly at any level of the report (region, category, customer) without producing misleading totals.
+- **Profit margin and unit price computed as DAX measures, not stored columns.** Both are ratios; storing them as physical columns would invite incorrect averaging in Power BI. They're instead computed live from summed profit/sales, so they aggregate correctly at every level of a report.
+- **`postal_code` typed as `STRING`, not `INT`.** US zip codes with leading zeros (e.g. Boston, `02101`) would silently lose their leading digit if stored as an integer.
+- **Full overwrite on each pipeline run, not incremental merge.** Since the source is a static, one-time CSV extract with no new data arriving over time, a full overwrite on each run is the simplest correct approach. In a production system with a growing order feed, this would be replaced with an incremental `MERGE` on `order_id` instead.
 ## 🚀 Getting Started
  
 ### Prerequisites
  
-Ensure you have the following set up before beginning:
+- [ ] Databricks Free Edition — [Sign Up](https://login.databricks.com/signup)
+- [ ] Microsoft Power BI Desktop — [Download](https://www.microsoft.com/en-us/download/details.aspx?id=58494) (Windows only)
+- [ ] Kaggle Account — [Sign Up](https://www.kaggle.com/) to download the dataset
+- [ ] Git / GitHub
+### Running the Pipeline
  
-- [ ] **Databricks Free Edition** — [Sign Up](https://www.databricks.com/try-databricks)
-- [ ] **Microsoft Power BI Desktop** — [Download](https://powerbi.microsoft.com/desktop) *(Windows only — see note below)*
-- [ ] **Kaggle Account** — [Sign Up](https://www.kaggle.com) to download the dataset
-- [ ] **Git / GitHub** — New to Git? Start here:
-  - [GitHub "Hello World" Guide](https://docs.github.com/en/get-started/quickstart/hello-world)
-  - [Git & GitHub for Beginners (Video)](https://www.youtube.com/watch?v=RGOj5yH7evk)
-> **Mac Users:** Power BI Desktop is Windows only. Please reach out in the cohort Discord channel for alternative options.
- 
----
- 
-## 🛠️ Implementation Plan
- 
-### Phase 1 — Environment Setup & Bronze Layer
-**Estimated Effort: 3 Hours**
- 
-- Spin up Databricks Free Edition
-- Create `bronze`, `silver`, and `gold` catalogs
-- Create a `superstore` schema inside the `bronze` catalog
-- Create a `raw_superstore` volume under `bronze.superstore`
-- Upload `Sample - Superstore.csv` to the Volume
-- Write a PySpark notebook to read raw CSVs and save as Delta Tables in the Bronze catalog
-**✅ Success Criteria:** Bronze tables are queryable; row counts match source CSV.
- 
-> 💡 **Key Concept — Idempotency:** Your pipeline should be safe to re-run without creating duplicate records. New files should append new records while preserving existing ones.
- 
----
- 
-### Phase 2 — Silver Layer (Data Quality)
-**Estimated Effort: 4 Hours**
- 
-- Filter out orders with negative quantities (returns handling)
-- Standardise date formats (String → Timestamp)
-- Handle null values in `City` and `Postal Code` columns
-- Rename all fields to business-friendly names (no abbreviations, no acronyms)
-- Model data appropriately:
-  - Dimension tables for Customers, Dates, and Products
-  - Primary keys defined on all tables
-- Write clean data to Silver Delta Tables
-**✅ Success Criteria:** No duplicates; dates formatted correctly; nulls handled explicitly.
- 
----
- 
-### Phase 3 — Gold Layer (Business Logic)
-**Estimated Effort: 4 Hours**
- 
-Create a dimensional (Star Schema) model:
- 
-| Table | Type |
-|---|---|
-| `Fact_Sales` | Fact Table |
-| `Dim_Customer` | Dimension |
-| `Dim_Product` | Dimension |
-| `Dim_Date` | Dimension |
- 
-- Calculate derived metrics (e.g., `Delivery_Days = Ship_Date - Order_Date`)
-- Decide on persistence strategy: Table vs View vs Materialised View
-**✅ Success Criteria:** Star Schema created; one row per transaction in the Fact table.
- 
----
- 
-### Phase 4 — Power BI Dashboard
-**Estimated Effort: 3 Hours**
- 
-- Connect Power BI to Gold tables/views via Databricks Partner Connect
-- Build the Data Model (define relationships) inside Power BI
-- Design and publish the dashboard
-**✅ Success Criteria:** Dashboard refreshes without errors; KPIs match validated logic.
- 
----
- 
-## 📊 Dashboard Requirements — Business ROI
- 
-The final dashboard must answer these three business questions:
- 
-| # | Business Question | Visual Type |
-|---|---|---|
-| 1 | **Profitability** — Which Product Sub-Categories have the lowest profit margins? | Bar / Table Chart |
-| 2 | **Logistics Efficiency** — What is the Average Days to Ship per Region? | Bar Chart |
-| 3 | **Customer Value** — Who are the Top 10 Customers by total spend YTD? | Ranked Table |
- 
-> 📌 **Required:** A **KPI Card** at the top of the dashboard showing **Total Profit** formatted as currency.
- 
----
- 
+1. Create `bronze`, `silver`, and `gold` catalogs in Databricks
+2. Upload `Sample - Superstore.csv` to a Volume under `bronze.superstore`
+3. Run the notebooks in `notebooks/` in order (bronze → silver → gold)
+4. Connect Power BI Desktop to the Gold catalog via Databricks Partner Connect
+5. Open `powerbi/GlobalMart_Dashboard.pbix`
 ## 📁 Repository Structure
  
 ```
@@ -165,30 +111,22 @@ globalmart-retail-pipeline/
 │   └── GlobalMart_Dashboard.pbix
 │
 ├── docs/
-│   └── architecture_diagram.png
+│   └── dashboard_screenshot.png
 │
 └── README.md
 ```
  
----
+> Update the notebook filenames above to match what's actually in your `notebooks/` folder before pushing.
  
 ## 🏆 Milestone Tracker
  
-| Phase | Deliverable | Est. Effort | Status |
-|---|---|---|---|
-| 01 | Ingestion Pipeline (Bronze) | 3 hrs | ⬜ Not Started |
-| 02 | Data Cleaning (Silver) | 4 hrs | ⬜ Not Started |
-| 03 | Dimensional Modelling (Gold) | 4 hrs | ⬜ Not Started |
-| 04 | Power BI Dashboard | 3 hrs | ⬜ Not Started |
+| Phase | Deliverable | Status |
+|---|---|---|
+| 01 | Ingestion Pipeline (Bronze) | ✅ Complete |
+| 02 | Data Cleaning (Silver) | ✅ Complete |
+| 03 | Dimensional Modelling (Gold) | ✅ Complete |
+| 04 | Power BI Dashboard | ✅ Complete |
  
----
+## 👤 About
  
-## 🤝 Support & Community
- 
-If you run into issues, don't understand any terminology, or have questions along the way — reach out in the **Gambill Datasphere Discord** cohort page.
- 
----
- 
-## 📄 License
- 
-This project is for educational purposes as part of the Gambill Datasphere Data Engineering cohort.
+Built by Emmanuel Yakubu (https://github.com/emmanayoola) as a self-directed portfolio project.
