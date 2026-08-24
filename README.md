@@ -14,11 +14,9 @@ This project builds an end-to-end data pipeline that ingests raw sales data, cle
  
 ## 📊 Final Dashboard
  
-![GlobalMart Profitability & Logistics Command Center](docs/dashboard_screenshot.png)
+![GlobalMart Profitability & Logistics Command Center](globalmart_dashboard.png)
  
-*Add your dashboard screenshot to `docs/dashboard_screenshot.png` and this will render automatically on GitHub.*
- 
-The dashboard answers the three business questions below the project was built to solve, plus additional insight visuals added during the build (see [Key Design Decisions](#-key-design-decisions)).
+The dashboard answers the three business questions the project was built to solve, plus additional insight visuals added during the build (see [Key Design Decisions](#-key-design-decisions)).
  
 | # | Business Question | Visual |
 |---|---|---|
@@ -33,6 +31,8 @@ The dashboard answers the three business questions below the project was built t
 - Discount % vs Profit Margin scatter — surfaces which sub-categories are being discounted into unprofitability
 - Avg Days to Ship by Shipping Mode — logistics bottleneck view by carrier tier, not just region
 - Total Sales by Year and Month — trend line, since none of the required visuals show change over time
+See [DATA_DICTIONARY.md](DATA_DICTIONARY.md) for full column-level schema of every table.
+ 
 ## 🏗️ Technical Architecture
  
 ```
@@ -74,11 +74,12 @@ CSV Source (Kaggle Superstore)
  
 These are the judgment calls made during the build, and the reasoning behind them:
  
-- **Geography as a degenerate dimension, not a full SCD2 table.** Geography was initially modeled as a Slowly Changing Dimension (Type 2) with `valid_from`/`valid_to`/`is_current_flag` tracking. Since this dataset has no actual geography changes over time (it's a static historical extract), that added complexity without adding value — and was producing row duplication in the fact table from overlapping dimension versions. `region`, `state`, and `city` are instead carried as flat degenerate attributes directly on `Fact_Sales`, which is simpler and more appropriate for data that doesn't actually change.
-- **`discount_amount` stored as an additive fact, not the raw discount rate.** Discount rates (percentages) can't be summed meaningfully across rows — storing the calculated dollar amount (`sales × discount`) instead means it aggregates correctly at any level of the report (region, category, customer) without producing misleading totals.
-- **Profit margin and unit price computed as DAX measures, not stored columns.** Both are ratios; storing them as physical columns would invite incorrect averaging in Power BI. They're instead computed live from summed profit/sales, so they aggregate correctly at every level of a report.
+- **Geography as a degenerate dimension, not a full SCD2 table.** Geography was initially modeled as a Slowly Changing Dimension (Type 2), but this dataset has no actual geography changes over time — that added complexity without adding value, and was producing row duplication in the fact table from overlapping dimension versions. `region` is instead carried as a flat degenerate attribute directly on `fact_sales`.
+- **`discount_amount` and `gross_sales` stored as additive facts, not the raw discount rate.** Discount rates (percentages) can't be summed meaningfully across rows — storing the calculated dollar amounts instead means they aggregate correctly at any level of a report.
+- **Profit margin and unit price computed as DAX measures, not stored columns.** Both are ratios; storing them as physical columns would invite incorrect averaging in Power BI. They're instead computed live from summed profit/sales.
 - **`postal_code` typed as `STRING`, not `INT`.** US zip codes with leading zeros (e.g. Boston, `02101`) would silently lose their leading digit if stored as an integer.
-- **Full overwrite on each pipeline run, not incremental merge.** Since the source is a static, one-time CSV extract with no new data arriving over time, a full overwrite on each run is the simplest correct approach. In a production system with a growing order feed, this would be replaced with an incremental `MERGE` on `order_id` instead.
+- **Customer and Product remain full SCD Type 2 dimensions**, tracked via a SHA-256 hash of their business attributes, with `valid_from`/`valid_to`/`is_current_flag` columns and a Delta `MERGE` that expires and re-inserts changed records.
+- **Full overwrite on each gold-layer run, not incremental merge.** Since the source is a static, one-time CSV extract, a full overwrite on each run is the simplest correct approach. In a production system with a growing order feed, this would be replaced with an incremental `MERGE` on `order_id` instead — which the Bronze/Silver `sales` load already does via `whenNotMatchedInsertAll`/`whenMatchedUpdateAll`.
 ## 🚀 Getting Started
  
 ### Prerequisites
@@ -91,32 +92,39 @@ These are the judgment calls made during the build, and the reasoning behind the
  
 1. Create `bronze`, `silver`, and `gold` catalogs in Databricks
 2. Upload `Sample - Superstore.csv` to a Volume under `bronze.superstore`
-3. Run the notebooks in `notebooks/` in order (bronze → silver → gold)
-4. Connect Power BI Desktop to the Gold catalog via Databricks Partner Connect
-5. Open `powerbi/GlobalMart_Dashboard.pbix`
+3. Run `notebooks/bronze/ingest_to_bronze.ipynb`
+4. Run the silver notebooks: `sales_silver.ipynb`, `customer_silver.ipynb`, `products_silver.ipynb`
+5. Run the gold notebooks: `gold_dim_customer.ipynb`, `gold_dim_product.ipynb`, `gold_dim_date.ipynb`, then `gold_fact_sales.ipynb` last (it depends on the dimension tables)
+6. Connect Power BI Desktop to the Gold catalog via Databricks Partner Connect
+7. Open `powerbi/globalmart_dashboard.pbix`
 ## 📁 Repository Structure
  
 ```
-globalmart-retail-pipeline/
+retail-globalmart-databricks/
 │
 ├── notebooks/
-│   ├── 01_bronze_ingestion.ipynb
-│   ├── 02_silver_cleaning.ipynb
-│   └── 03_gold_modeling.ipynb
+│   ├── bronze/
+│   │   └── ingest_to_bronze.ipynb
+│   ├── silver/
+│   │   ├── sales_silver.ipynb
+│   │   ├── customer_silver.ipynb
+│   │   └── products_silver.ipynb
+│   └── gold/
+│       ├── gold_dim_customer.ipynb
+│       ├── gold_dim_product.ipynb
+│       ├── gold_dim_date.ipynb
+│       └── gold_fact_sales.ipynb
 │
 ├── data/
 │   └── Sample - Superstore.csv
 │
 ├── powerbi/
-│   └── GlobalMart_Dashboard.pbix
+│   └── globalmart_dashboard.pbix
 │
-├── docs/
-│   └── dashboard_screenshot.png
-│
+├── globalmart_dashboard.png
+├── DATA_DICTIONARY.md
 └── README.md
 ```
- 
-> Update the notebook filenames above to match what's actually in your `notebooks/` folder before pushing.
  
 ## 🏆 Milestone Tracker
  
@@ -129,4 +137,4 @@ globalmart-retail-pipeline/
  
 ## 👤 About
  
-Built by Emmanuel Yakubu (https://github.com/emmanayoola) as a self-directed portfolio project.
+Built by Emmanuel Yakubu ([github.com/emmanayoola](https://github.com/emmanayoola)) as a self-directed portfolio project.
